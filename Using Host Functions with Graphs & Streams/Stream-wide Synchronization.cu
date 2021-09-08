@@ -29,8 +29,8 @@ __global__ void knModulo(int divisor, int *remainders, int maxDividend) {
 
 
 // Step 2
-// Calculates element-wise product of two arrays and stores results in dstArray
-__global__ void knDotProduct(int *dstArray, int *otherArray, int size) {
+// Calculates element-wise AND of two arrays and stores results in dstArray
+__global__ void knArrayAnd(int *dstArray, int *otherArray, int size) {
     // The unique rank of each thread
     int rank = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -38,7 +38,7 @@ __global__ void knDotProduct(int *dstArray, int *otherArray, int size) {
     if (rank > size)
         return;
 
-    dstArray[rank] = dstArray[rank] * otherArray[rank];
+    dstArray[rank] = dstArray[rank] && otherArray[rank];
 }
 
 
@@ -97,8 +97,8 @@ int main(int argc, char *argv[]) {
                 cudaStreamSynchronize(streams[destStreamIdx]);
                 cudaStreamSynchronize(streams[srcStreamIdx]);
                 
-                // Run the dot product kernel on the destination stream
-                knDotProduct<<<1, NUM_THREADS, 0, streams[destStreamIdx]>>>(d_modulo_remainders[destStreamIdx], d_modulo_remainders[srcStreamIdx], NUM_THREADS);
+                // Run the element-wise AND kernel on the destination stream
+                knArrayAnd<<<1, NUM_THREADS, 0, streams[destStreamIdx]>>>(d_modulo_remainders[destStreamIdx], d_modulo_remainders[srcStreamIdx], NUM_THREADS);
             }
         }
     }
@@ -121,4 +121,51 @@ int main(int argc, char *argv[]) {
         cudaFree(d_modulo_remainders[i]);
         cudaStreamDestroy(streams[i]);
     }
+
+    //// Second pass - run the prime finder algorithm again to verify initial list
+    // Allocate device memory for modulo operation remainders for each prime in the list
+    int *d_modulo_remainders_new[numPrimes_new];
+    for (int i = 0; i < numPrimes_new; i++)
+        cudaMalloc(&(d_modulo_remainders_new[i]), sizeof(int)*NUM_THREADS);
+
+    // Allocate host remainder array to hold results of dot product in step 2
+    int *h_modulo_remainders_new = (int *) malloc(sizeof(int)*NUM_THREADS);
+
+    // Create & initialize one stream for each of the initial primes
+    cudaStream_t streams_new[numPrimes_new];
+    for (int i = 0; i < numPrimes_new; i++)
+        cudaStreamCreate(&(streams_new[i]));
+
+    for (int primeIndex = 0; primeIndex < numPrimes_new; primeIndex++) {
+        knModulo<<<1, NUM_THREADS, 0, streams_new[primeIndex]>>>(primes_new[primeIndex], d_modulo_remainders_new[primeIndex], NUM_THREADS);
+    }
+
+    for (int step=1; step < numPrimes_new; step <<=1) {
+        for (int streamIdx=0; streamIdx < numPrimes_new; streamIdx += step * 2) {
+            int destStreamIdx = streamIdx;
+            int srcStreamIdx  = streamIdx + step;
+            if (srcStreamIdx < numPrimes_new) {
+                // Make sure both streams have completed
+                cudaStreamSynchronize(streams_new[destStreamIdx]);
+                cudaStreamSynchronize(streams_new[srcStreamIdx]);
+                
+                // Run the element-wise AND kernel on the destination stream
+                knArrayAnd<<<1, NUM_THREADS, 0, streams_new[destStreamIdx]>>>(d_modulo_remainders_new[destStreamIdx], d_modulo_remainders_new[srcStreamIdx], NUM_THREADS);
+            }
+        }
+    }
+
+    cudaStreamSynchronize(streams_new[0]);
+
+    cudaMemcpy(h_modulo_remainders_new, d_modulo_remainders_new[0], sizeof(int)*NUM_THREADS, cudaMemcpyDeviceToHost);
+
+    int *secondPass_remainders = (int *) malloc(sizeof(int)*NUM_THREADS);
+    int numPrimes_final = getNonZeroElements(h_modulo_remainders_new, NUM_THREADS, secondPass_remainders);
+
+    int primes_final[numPrimes_final];
+    memcpy(primes_final, secondPass_remainders, numPrimes_final);
+
+    printf("\nThere are %d primes < %d:\n", numPrimes_final, NUM_THREADS);
+    for (int i=0; i<numPrimes_final; i++)
+        printf("%d ",secondPass_remainders[i]);
 }
