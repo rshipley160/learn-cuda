@@ -37,4 +37,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < numElements; i++)
         printf("%d ",h_array[i]);
     printf("\n");
+    
+    free(h_array);
+    cudaFree(d_array);
 }
