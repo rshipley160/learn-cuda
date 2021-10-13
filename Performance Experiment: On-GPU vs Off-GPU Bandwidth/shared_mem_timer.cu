@@ -1,7 +1,5 @@
 #include <cstdio>
 
-#include "repeat.h"
-
 __global__ void timeSharedCopy(int *input, int size, int *durations, int iterations) {
 	__shared__ extern int shared_data[];
 	unsigned int j;
