@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
 	// Test #2: GPU-GPU memcpy capablilty    
     float *deviceMemcpyTimes = memcpyDtoD(numElements, repetitions);
 
-	printf("memcpyDtoD,%d,MB,2",num_mibibytes);
+	printf("memcpyDtoD,%d,MB,1",num_mibibytes);
     for (int rep=0; rep < repetitions; rep++)
         printf(",%f",deviceMemcpyTimes[rep]);
     printf("\n");
@@ -277,7 +277,7 @@ int main(int argc, char *argv[])
 	// Test #3: Paged GPU-CPU memcpy capablilty    
     float *pagedMemcpyTimes = pagedDtoH(numElements, repetitions);
 
-	printf("pagedDtoH,%d,MB,2",num_mibibytes);
+	printf("pagedDtoH,%d,MB,1",num_mibibytes);
     for (int rep=0; rep < repetitions; rep++)
         printf(",%f",pagedMemcpyTimes[rep]);
     printf("\n");
@@ -287,7 +287,7 @@ int main(int argc, char *argv[])
  	// Test #4: Pinned GPU-CPU memcpy capablilty    
     float *pinnedMemcpyTimes = pinnedDtoH(numElements, repetitions);
 
-	printf("pinnedDtoH,%d,MB,2",num_mibibytes);
+	printf("pinnedDtoH,%d,MB,1",num_mibibytes);
     for (int rep=0; rep < repetitions; rep++)
         printf(",%f",pinnedMemcpyTimes[rep]);
     printf("\n");
@@ -297,7 +297,7 @@ int main(int argc, char *argv[])
 	// Test #5: Unified memory copy capablilty    
     float *unifiedMemcpyTimes = unifiedMemcpy(numElements, repetitions);
 
-	printf("unifiedMemcpy,%d,MB,2",num_mibibytes);
+	printf("unifiedMemcpy,%d,MB,1",num_mibibytes);
     for (int rep=0; rep < repetitions; rep++)
         printf(",%f",unifiedMemcpyTimes[rep]);
     printf("\n");
