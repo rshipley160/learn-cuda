@@ -129,7 +129,7 @@ float *pagedDtoH(long numElements, int repetitions) {
     float *results = (float *) malloc(sizeof(float)*repetitions);
 
     // Initial run through to avoid any cold-start outliers
-    cudaMemcpy(h_output, d_input, numElements*sizeof(int), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(h_output, d_input, numElements*sizeof(int), cudaMemcpyDeviceToHost);
 
     for (int rep=0; rep < repetitions; rep++)
     {
