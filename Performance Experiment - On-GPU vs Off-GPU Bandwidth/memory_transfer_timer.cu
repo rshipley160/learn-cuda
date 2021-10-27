@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
     // Determine number of integer elements for each transfer based on desired memory transfer amount
     long numElements = num_mibibytes * MI_B / sizeof(int);
 
-	printf("type,size,unit,numAccesses");
+	printf("type,size,unit,numTransfers");
     for (int rep=1; rep <= repetitions; rep++)
         printf(",run%d",rep);
     printf("\n");
