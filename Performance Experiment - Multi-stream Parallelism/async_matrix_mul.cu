@@ -13,45 +13,17 @@ __global__ void matrix_fill(float *matrix, int rows, int cols, float value) {
     matrix[cols*i + j] = value;
 }
 
-// Fill matrix - matrix size is determined by kernel configuration
-__global__ void matrix_fill(float *matrix) {
+__global__ void matrix_mul(float *A, float *B, float *C, int rows, int cols, int aligned) {
     // The row of the output cell
     int i = blockDim.y * blockIdx.y + threadIdx.y;
-
-    // The column of the output cell
-    int j = blockDim.x * blockIdx.x + threadIdx.x;
-
-    // Number of threads/elements per grid row
-    int rowSize = gridDim.x * blockDim.x;
-
-    matrix[rowSize*i + j] = j; // Replace j with whatever value you want to set
-}
-
-__global__ void matrix_mul(float *A, float *B, float *C, int hiddenDim) {
-    // The row of the output cell
-    int i = blockDim.y * blockIdx.y + threadIdx.y;
-
-    // The column of the output cell
-    int j = blockDim.x * blockIdx.x + threadIdx.x;
-
-    // Total number of threads in one row of the kernel grid
-    int rowSize = gridDim.x * blockDim.x;
-
-    for (int k = 0; k <= hiddenDim; k++) {
-        C[rowSize*i + j] += A[rowSize*i + k] * B[rowSize*k + j];
-    }
-}
-
-__global__ void matrix_mul_shared(float *A, float *B, float *C, int rows, int cols, int aligned, int streamID, int numStreams) {
-    // The row of the output cell
-    int i = blockDim.y * blockIdx.y + threadIdx.y;
-    // Cut out any threads that extend past the output matrix
     if (i >= rows) return;
 
     // The column of the output cell
-    int j = streamID * gridDim.x * blockDim.x + blockDim.x * blockIdx.x + threadIdx.x;
-    // Cut out any threads that extend past the output matrix
+    int j = blockDim.x * blockIdx.x + threadIdx.x;
     if (j >= cols) return;
+
+    // Clear any previous values in output matrix
+    C[cols*i + j] = 0;
 
     for (int k = 0; k < aligned; k++) {
         C[cols*i + j] += A[aligned*i + k] * B[cols*k + j];
@@ -77,72 +49,104 @@ void printMatrix(float *d_A, int rows, int cols) {
 
 int main(int argc, char *arg[]) {
     // Number of rows in output matrix
-    const int ROWS = 4;
+    const int ROWS = 32;
 
     // Number of columns in output matrix
-    const int COLS = 64;
+    const int COLS = 16;
 
     // Length of aligned dimension in input matrices
-    const int ALIGNED = 16382;
+    const int ALIGNED = 131072;
 
-    const int BLOCK_LENGTH = 4;
+    // Length of each block axis - blocks contain 256 threads
+    const int BLOCK_LENGTH = 16;
 
-    // Device input and output arrays (matrices)
-    float *d_A, *d_B, *d_C;
-    cudaMalloc(&d_A, sizeof(float)*ROWS*ALIGNED);
-    cudaMalloc(&d_B, sizeof(float)*ALIGNED*COLS);
-    cudaMalloc(&d_C, sizeof(float)*ROWS*COLS);
+    // The max number of streams to run at once - and the number of matrices to multiply
+    const int MAX_STREAMS = 16;
 
+    const int NUM_TRIALS = 20;
 
     dim3 grid_A = dim3(ALIGNED / BLOCK_LENGTH + 1, ROWS / BLOCK_LENGTH + 1);
     dim3 grid_B = dim3(COLS / BLOCK_LENGTH + 1, ALIGNED / BLOCK_LENGTH + 1);
 
     dim3 blockSize = dim3(BLOCK_LENGTH, BLOCK_LENGTH);
 
-    matrix_fill<<<grid_A, blockSize>>>(d_A, ROWS, ALIGNED, ALIGNED);
-    matrix_fill<<<grid_B, blockSize>>>(d_B, ALIGNED, COLS, ALIGNED);
+    // Initialize and fill two input and one output matrix per multiplication problem
+    float *d_A[MAX_STREAMS], *d_B[MAX_STREAMS], *d_C[MAX_STREAMS];
+    for (int i=0; i<MAX_STREAMS; i++) {
+        cudaMalloc(&(d_A[i]), sizeof(float)*ROWS*ALIGNED);
+        cudaMalloc(&(d_B[i]), sizeof(float)*ALIGNED*COLS);
+        cudaMalloc(&(d_C[i]), sizeof(float)*ROWS*COLS);
 
-    // printf("gridA(%d,%d); gridB(%d,%d)\n",grid_A.x, grid_A.y, grid_B.x, grid_B.y);
-    // printf("%s\n",cudaGetErrorString(cudaGetLastError()));
-    // printMatrix(d_A, ROWS, ALIGNED);
-    // printMatrix(d_B, ALIGNED, COLS);
+        matrix_fill<<<grid_A, blockSize>>>(d_A[i], ROWS, ALIGNED, 1);
+        matrix_fill<<<grid_B, blockSize>>>(d_B[i], ALIGNED, COLS, 1);
+    }
+
+    // Stream pool to be used in all timing tests
+    cudaStream_t streams[MAX_STREAMS];
+    for (int s=0; s<MAX_STREAMS; s++)
+        cudaStreamCreate(&streams[s]);
 
     cudaEvent_t clockStart, clockStop;
     cudaEventCreate(&clockStart);
     cudaEventCreate(&clockStop);
 
-    for (int numStreams = 1; numStreams <= 8; numStreams++) {
+    // Print CSV-style header row
+    for (int i=0; i<MAX_STREAMS; i++) {
+        printf("%d Stream",i+1);
+        if (i>0)
+            printf("s");
+        // Newline after last item
+        if (MAX_STREAMS-i==1)
+            printf("\n");
+        // Otherwise comma
+        else
+            printf(",");
+    }
 
-        dim3 gridSize = dim3(COLS / numStreams / BLOCK_LENGTH, ROWS / BLOCK_LENGTH);
-        gridSize.x += (COLS % (numStreams*BLOCK_LENGTH)) ? 1 : 0;
-        gridSize.y += (ROWS % BLOCK_LENGTH) ? 1 : 0;
+    // Perform each set of tests NUM_TRIALS times so we can get an average measure of performance
+    for (int trial=0; trial<NUM_TRIALS; trial++){
 
-        cudaStream_t streams[numStreams];
-        for (int s=0; s<numStreams; s++) {
-            cudaStreamCreate(&(streams[s]));
-        }
+        // Iterate through number of streams used to observe performance impact
+        for (int streamsUsed = 1; streamsUsed <= MAX_STREAMS; streamsUsed++) {
 
-        cudaEventRecord(clockStart, 0);
+            dim3 gridSize = dim3(COLS / BLOCK_LENGTH, ROWS / BLOCK_LENGTH);
+            gridSize.x += (COLS % BLOCK_LENGTH) ? 1 : 0;
+            gridSize.y += (ROWS % BLOCK_LENGTH) ? 1 : 0;
 
-        for (int s=0; s<numStreams; s++) {
-            matrix_mul_shared<<<gridSize, blockSize, 0, streams[s]>>>(d_A, d_B, d_C, ROWS, COLS, ALIGNED, s, numStreams);    
-        }
+            cudaEventRecord(clockStart, 0);
 
-        for (int s=0; s<numStreams; s++) {
-            cudaStreamSynchronize(streams[s]);
-        }
+                for (int i=0; i<MAX_STREAMS; i++)
+                    // Split problems between active streams -> streams[i%streamsUsed]
+                    matrix_mul<<<gridSize, blockSize, 0, streams[i%streamsUsed]>>>(d_A[i], d_B[i], d_C[i], ROWS, COLS, ALIGNED);
 
-        cudaEventRecord(clockStop, 0);
-        float timeElapsed;
-        cudaEventSynchronize(clockStop);
-        cudaEventElapsedTime(&timeElapsed, clockStart, clockStop);
+                for (int s=0; s<streamsUsed; s++)
+                    cudaStreamSynchronize(streams[s]);
 
-            printf("%d stream(s): %.4f\n", numStreams, timeElapsed);
+            cudaEventRecord(clockStop, 0);
 
-        for (int s=0; s<numStreams; s++){
-            cudaStreamDestroy(streams[s]);
+            float timeElapsed;
+            cudaEventSynchronize(clockStop);
+            cudaEventElapsedTime(&timeElapsed, clockStart, clockStop);
+
+            // Print results in CSV format
+            printf("%.4f", timeElapsed);
+            if (streamsUsed==MAX_STREAMS)
+                printf("\n");
+            else
+                printf(",");
         }
     }
+
+    // Cleanup
     cudaEventDestroy(clockStart);
     cudaEventDestroy(clockStop);
+
+    for (int s=0; s<MAX_STREAMS; s++)
+        cudaStreamDestroy(streams[s]);
+
+    for (int i=0; i<8; i++) {
+        cudaFree(d_A[i]);
+        cudaFree(d_B[i]);
+        cudaFree(d_C[i]);
+    }
 }
