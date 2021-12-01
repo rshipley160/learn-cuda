@@ -57,6 +57,11 @@ int main(int argc, char *argv[]) {
     cudaGraphInstantiate(&graphExecutable, quadraticGraph, NULL, NULL, 0);
 
     cudaGraphLaunch(graphExecutable, bMinus);
+    
+    cudaGraphDestroy(quadraticGraph);
+    
+    cudaStreamSynchronize(bMinus);
+    cudaGraphExecDestroy(graphExecutable);
 
     cudaEventDestroy(bPlusComplete);
     cudaEventDestroy(bMinusComplete);
