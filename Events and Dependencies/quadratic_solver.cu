@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
 
     // Concurrent
     elementwiseProduct<<<gridSize, BLOCK_SIZE, 0, bMinus>>>(b, b, sol1, NUM_ELEMENTS);
-    elementwiseProduct<<<gridSize, BLOCK_SIZE, 0, bPlus>>>(a, c, -4, sol2, NUM_ELEMENTS);
+    elementScalarProduct<<<gridSize, BLOCK_SIZE, 0, bPlus>>>(a, c, -4, sol2, NUM_ELEMENTS);
     cudaEventRecord(bMinusComplete, bMinus); // Signal bMinus completion of product kernel
 
     // Wait on product calculations to complete

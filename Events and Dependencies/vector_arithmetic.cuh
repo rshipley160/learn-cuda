@@ -57,7 +57,7 @@ __global__ void elementwiseProduct(float *a, float *b, float *out, int numElemen
         out[id] = a[id] * b[id];
 }
 
-__global__ void elementwiseProduct(float *a, float *b, float scalar, float *out, int numElements) {
+__global__ void elementScalarProduct(float *a, float *b, float scalar, float *out, int numElements) {
     int id = globalIndex();
 
     if (id < numElements)
