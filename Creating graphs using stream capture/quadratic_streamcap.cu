@@ -15,8 +15,8 @@ int main(int argc, char *argv[]) {
     cudaMalloc(&tmp, sizeof(float)*NUM_ELEMENTS);
 
     fillArray<<<gridSize, BLOCK_SIZE>>>(a, NUM_ELEMENTS, 1);
-    fillArray<<<gridSize, BLOCK_SIZE>>>(b, NUM_ELEMENTS, 0);
-    fillArray<<<gridSize, BLOCK_SIZE>>>(c, NUM_ELEMENTS, -4);
+    fillArray<<<gridSize, BLOCK_SIZE>>>(b, NUM_ELEMENTS, 2);
+    fillArray<<<gridSize, BLOCK_SIZE>>>(c, NUM_ELEMENTS, 1);
 
     cudaStream_t bMinus;
     cudaStream_t bPlus;
@@ -32,8 +32,13 @@ int main(int argc, char *argv[]) {
     cudaGraphCreate(&quadraticGraph, 0);
 
     cudaStreamBeginCapture(bMinus, cudaStreamCaptureModeGlobal);
+        // Fork into bPlus to make stream capture record bPlus activity
+        cudaEventRecord(bMinusComplete, bMinus);
+        cudaStreamWaitEvent(bPlus, bMinusComplete);
+
+        // Start graph activities
         elementwiseProduct<<<gridSize, BLOCK_SIZE, 0, bMinus>>>(b, b, sol1, NUM_ELEMENTS);
-        elementwiseProduct<<<gridSize, BLOCK_SIZE, 0, bPlus>>>(a, c, -4, sol2, NUM_ELEMENTS);
+        elementScalarProduct<<<gridSize, BLOCK_SIZE, 0, bPlus>>>(a, c, -4, sol2, NUM_ELEMENTS);
         cudaEventRecord(bMinusComplete, bMinus);
 
         cudaStreamWaitEvent(bPlus, bMinusComplete);
@@ -52,22 +57,23 @@ int main(int argc, char *argv[]) {
         cudaStreamWaitEvent(bMinus, bPlusComplete);
 
     cudaStreamEndCapture(bMinus, &quadraticGraph);
-    
-    cudaGraphExec_t graphExecutable;
-    cudaGraphInstantiate(&graphExecutable, quadraticGraph, NULL, NULL, 0);
-
-    cudaGraphLaunch(graphExecutable, bMinus);
-    
-    cudaGraphDestroy(quadraticGraph);
-    
-    cudaStreamSynchronize(bMinus);
-    cudaGraphExecDestroy(graphExecutable);
 
     cudaEventDestroy(bPlusComplete);
     cudaEventDestroy(bMinusComplete);
 
+    cudaGraphExec_t graphExecutable;
+    cudaGraphInstantiate(&graphExecutable, quadraticGraph, NULL, NULL, 0);
+
     cudaStreamDestroy(bMinus);
     cudaStreamDestroy(bPlus);
+
+    cudaStream_t newStream;
+    cudaStreamCreate(&newStream);
+    
+    cudaGraphLaunch(graphExecutable, newStream);
+    cudaStreamSynchronize(newStream);
+
+    cudaStreamDestroy(newStream);
 
     cudaFree(a);
     cudaFree(b);
