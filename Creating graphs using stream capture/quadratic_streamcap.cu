@@ -53,6 +53,8 @@ int main(int argc, char *argv[]) {
 
         elementwiseQuotient<<<gridSize, BLOCK_SIZE, 0, bMinus>>>(sol1, a, 0.5, sol1, NUM_ELEMENTS);
         elementwiseQuotient<<<gridSize, BLOCK_SIZE, 0, bPlus>>>(sol2, a, 0.5, sol2, NUM_ELEMENTS);
+
+        // Join the bPlus stream back into bMinus
         cudaEventRecord(bPlusComplete, bPlus);
         cudaStreamWaitEvent(bMinus, bPlusComplete);
 
