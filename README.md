@@ -8,4 +8,5 @@ The knowledge base is comprised of three components:
 ## Getting Started
 The [repository wiki home page](https://github.com/rshipley160/learn-cuda/wiki) is the core of the knowledge base. There, you will find a table of contents that lists all of the tutorials and performance experiments in the intended learning order, with links to each article, program, or data set under each topic. Once you get started on a tutorial, you will also be able to access each tutorial's materials from inside the article. There will also be links to the previous and next articles in the series so that you can continue learning without having to visit the home page after each topic.
 ## About
-This knowledge base was created by Riley Shipley in fall of 2021 in partnership with the University of Tennessee at Chattanooga and the ExaMPI project lead by Dr. Tony Skjellum. 
+This knowledge base was created by Riley Shipley in fall of 2021 in partnership with the University of Tennessee at Chattanooga and the ExaMPI project lead by Dr. Tony Skjellum.  
+For questions, comments, or suggestions, you can email me at riley-shipley@utc.edu.
